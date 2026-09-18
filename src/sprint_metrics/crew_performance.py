@@ -1,4 +1,4 @@
-"""Crew performance command: report cycle time and lead time for the current sprint."""
+"""Crew performance command: report cycle time, lead time, and throughput for the current sprint."""
 
 from __future__ import annotations
 
@@ -93,14 +93,24 @@ def calculate_cycle_time_and_lead_time(
     )
 
 
+def calculate_throughput(cards: Iterable[Card | Mapping[str, object]]) -> int:
+    """Return the number of completed cards in the sprint.
+
+    Throughput is the count of cards that have reached the completed state.
+    Cards still in flight do not count.
+    """
+    return sum(1 for card in _as_cards(cards) if card.is_completed)
+
+
 def format_performance_table(cards: Iterable[Card | Mapping[str, object]]) -> str:
     """Render the crew performance metrics as a markdown table."""
     cycle_time, lead_time = calculate_cycle_time_and_lead_time(cards)
+    throughput = calculate_throughput(cards)
     return "\n".join(
         [
-            "| Sprint | Cycle time | Lead time |",
-            "|--------|------------|-----------|",
-            f"| Current | {cycle_time} days | {lead_time} days |",
+            "| Sprint | Cycle time | Lead time | Throughput |",
+            "|--------|------------|-----------|------------|",
+            f"| Current | {cycle_time} days | {lead_time} days | {throughput} |",
         ]
     )
 
@@ -117,7 +127,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Entry point for the crew performance command."""
     parser = argparse.ArgumentParser(
         prog="sprint-metrics",
-        description="Report cycle time and lead time for the current sprint.",
+        description="Report cycle time, lead time, and throughput for the current sprint.",
     )
     parser.add_argument(
         "cards",
