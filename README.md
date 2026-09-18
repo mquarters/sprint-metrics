@@ -6,7 +6,7 @@ table, as JSON, and as markdown for the standup issue.
 
 **This repository is built by agents.** The Sponsor sets the goal; the crew
 proposes the epics, writes the stories, implements them, reviews, and merges.
-See [mquarters/crew](https://github.com/mquarters/crew) for the organization
+See [mqucifer/crew](https://github.com/mqucifer/crew) for the organization
 that builds it, and its `docs/ways-of-working.md` for the rules those agents
 follow.
 
