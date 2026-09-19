@@ -292,3 +292,56 @@ def test_escalation_rate_rounds_to_nearest_percent():
 
     cards = [COMPLETED_CARD] * 3
     assert calculate_escalation_rate(cards, escalations=1) == 33
+
+
+def test_standup_summary_includes_heading_date_and_summary_lines():
+    """AC1: the standup summary starts with a markdown heading, includes the
+    report date, and includes summary lines for completed, in-progress, and
+    blocked work."""
+    from sprint_metrics import format_standup_summary
+
+    cards = [
+        {
+            "created": "2024-01-01",
+            "started": "2024-01-03",
+            "completed": "2024-01-07",
+            "owner": "alice",
+        },
+        {"created": "2024-01-01", "started": "2024-01-02", "completed": "", "owner": "bob"},
+        {
+            "created": "2024-01-01",
+            "started": "2024-01-02",
+            "completed": "",
+            "blocked_since": "2024-01-05",
+            "owner": "carol",
+        },
+    ]
+    result = format_standup_summary(cards, crew_members=["alice", "bob", "carol"])
+
+    assert result.startswith("# ")
+    assert "Report date:" in result
+    assert "Completed: 1" in result
+    assert "In progress: 1" in result
+    assert "Blocked: 1" in result
+    assert "alice: completed=1, in-progress=0, blocked=0" in result
+    assert "bob: completed=0, in-progress=1, blocked=0" in result
+    assert "carol: completed=0, in-progress=0, blocked=1" in result
+
+
+def test_standup_summary_lists_crew_member_with_no_activity():
+    """AC2: a crew member with no recorded performance activity is still listed
+    with zero values or includes the text No activity."""
+    from sprint_metrics import format_standup_summary
+
+    cards = [
+        {
+            "created": "2024-01-01",
+            "started": "2024-01-03",
+            "completed": "2024-01-07",
+            "owner": "alice",
+        },
+    ]
+    result = format_standup_summary(cards, crew_members=["alice", "bob"])
+
+    assert "bob" in result
+    assert "No activity" in result

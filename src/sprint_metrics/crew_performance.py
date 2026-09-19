@@ -23,6 +23,7 @@ class Card:
     started: date | None = None
     completed: date | None = None
     blocked_since: date | None = None
+    owner: str = ""
 
     @property
     def is_completed(self) -> bool:
@@ -66,6 +67,7 @@ def parse_card(raw: Mapping[str, object]) -> Card:
         started=_parse_date(raw.get("started"), "started"),
         completed=_parse_date(raw.get("completed"), "completed"),
         blocked_since=_parse_date(raw.get("blocked_since"), "blocked_since"),
+        owner=str(raw.get("owner", "")),
     )
 
 
@@ -288,3 +290,56 @@ def calculate_escalation_rate(
     if completed == 0:
         return 0
     return round(escalations / completed * 100)
+
+
+def format_standup_summary(
+    cards: Iterable[Card | Mapping[str, object]],
+    crew_members: Sequence[str] | None = None,
+) -> str:
+    """Render a standup-ready crew performance summary in markdown.
+
+    The summary includes a heading, the report date, summary lines for
+    completed, in-progress, and blocked work, and one line per crew member
+    with that member's completed, in-progress, and blocked counts. Crew
+    members with no recorded activity are listed with zero values.
+    """
+    parsed = _as_cards(cards)
+    completed = [card for card in parsed if card.is_completed]
+    blocked = [card for card in parsed if card.blocked_since is not None and card.completed is None]
+    in_progress = [
+        card
+        for card in parsed
+        if not card.is_completed and card.started is not None and card.blocked_since is None
+    ]
+
+    if crew_members is None:
+        crew_members = []
+
+    lines: list[str] = [
+        "# Crew Performance Summary",
+        f"Report date: {date.today().isoformat()}",
+        "",
+        f"Completed: {len(completed)}",
+        f"In progress: {len(in_progress)}",
+        f"Blocked: {len(blocked)}",
+        "",
+    ]
+
+    for member in crew_members:
+        member_completed = sum(1 for card in completed if _card_owner(card) == member)
+        member_in_progress = sum(1 for card in in_progress if _card_owner(card) == member)
+        member_blocked = sum(1 for card in blocked if _card_owner(card) == member)
+        if member_completed == 0 and member_in_progress == 0 and member_blocked == 0:
+            lines.append(f"{member}: No activity")
+        else:
+            lines.append(
+                f"{member}: completed={member_completed}, "
+                f"in-progress={member_in_progress}, blocked={member_blocked}"
+            )
+
+    return "\n".join(lines)
+
+
+def _card_owner(card: Card) -> str:
+    """Return the owner of a card, defaulting to an empty string."""
+    return getattr(card, "owner", "")
