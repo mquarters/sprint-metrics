@@ -247,6 +247,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Output the report in Prometheus text exposition format.",
     )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output the report as a JSON object.",
+    )
     args = parser.parse_args(argv)
 
     source = _read(args.cards)
@@ -263,6 +268,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(format_prometheus_report(cards, wip_limits, args.escalations))
     elif args.markdown:
         print(format_markdown_report(cards, wip_limits, args.escalations))
+    elif args.json:
+        print(format_json_report(cards, wip_limits, args.escalations))
     else:
         print(format_performance_table(cards, wip_limits, args.escalations))
     return 0
@@ -356,4 +363,28 @@ def format_prometheus_report(
             f"sprint_blocked_aging_days {blocked_aging}",
             f"sprint_escalation_rate_percent {escalation_rate}",
         ]
+    )
+
+
+def format_json_report(
+    cards: Iterable[Card | Mapping[str, object]],
+    wip_limits: Mapping[str, int] | None = None,
+    escalations: int = 0,
+) -> str:
+    """Render the crew performance metrics as a JSON object."""
+    parsed = _as_cards(cards)
+    cycle_time, lead_time = calculate_cycle_time_and_lead_time(parsed)
+    throughput = calculate_throughput(parsed)
+    wip_violations = calculate_wip_violations(parsed, wip_limits)
+    blocked_aging = calculate_blocked_aging(parsed)
+    escalation_rate = calculate_escalation_rate(parsed, escalations)
+    return json.dumps(
+        {
+            "cycle_time_days": cycle_time,
+            "lead_time_days": lead_time,
+            "throughput": throughput,
+            "wip_violations": wip_violations,
+            "blocked_aging_days": blocked_aging,
+            "escalation_rate_percent": escalation_rate,
+        }
     )
