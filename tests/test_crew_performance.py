@@ -14,9 +14,9 @@ from sprint_metrics import (
     main,
 )
 
-HEADER = "| Sprint | Cycle time | Lead time | Throughput | WIP violations | Blocked aging |"
+HEADER = "| Sprint | Cycle time | Lead time | Throughput | WIP violations | Blocked aging | Escalation rate |"
 SEPARATOR = "|--------|------------|-----------|------------|----------------|---------------|"
-SEPARATOR = "|--------|------------|-----------|------------|----------------|"
+SEPARATOR = "|--------|------------|-----------|------------|----------------|---------------|-----------------|"
 
 # A card completed on the 7th, started 4 days earlier and created 6 days earlier.
 COMPLETED_CARD = {"created": "2024-01-01", "started": "2024-01-03", "completed": "2024-01-07"}
@@ -27,7 +27,7 @@ IN_FLIGHT_CARD = {"created": "2024-01-01", "started": "2024-01-02", "completed":
 def run_command(tmp_path, capsys):
     """Run the command over a sprint's cards, returning its exit code and output."""
 
-    def run(cards, wip_limits=None):
+    def run(cards, wip_limits=None, escalations=0):
         path = tmp_path / "cards.json"
         path.write_text(json.dumps(cards))
         argv = [str(path)]
@@ -35,6 +35,8 @@ def run_command(tmp_path, capsys):
             limits_path = tmp_path / "wip-limits.json"
             limits_path.write_text(json.dumps(wip_limits))
             argv += ["--wip-limits", str(limits_path)]
+        if escalations:
+            argv += ["--escalations", str(escalations)]
         exit_code = main(argv)
         captured = capsys.readouterr()
         return exit_code, captured.out, captured.err
@@ -50,7 +52,7 @@ def test_command_reports_cycle_and_lead_time_for_a_completed_card(run_command):
     assert exit_code == 0
     assert HEADER in output
     assert SEPARATOR in output
-    assert "| Current | 4 days | 6 days | 1 | 0 | 0 days |" in output
+    assert "| Current | 4 days | 6 days | 1 | 0 | 0 days | 0% |" in output
 
 
 def test_command_reports_zero_when_nothing_is_completed(run_command):
@@ -61,7 +63,7 @@ def test_command_reports_zero_when_nothing_is_completed(run_command):
     assert exit_code == 0
     assert HEADER in output
     assert SEPARATOR in output
-    assert "| Current | 0 days | 0 days | 0 | 0 | 0 days |" in output
+    assert "| Current | 0 days | 0 days | 0 | 0 | 0 days | 0% |" in output
 
 
 def test_command_reports_zero_for_an_empty_sprint(run_command):
@@ -69,7 +71,7 @@ def test_command_reports_zero_for_an_empty_sprint(run_command):
     exit_code, output, _ = run_command([])
 
     assert exit_code == 0
-    assert "| Current | 0 days | 0 days | 0 | 0 | 0 days |" in output
+    assert "| Current | 0 days | 0 days | 0 | 0 | 0 days | 0% |" in output
 
 
 def test_command_reports_throughput_for_five_completed_cards(run_command):
@@ -81,7 +83,7 @@ def test_command_reports_throughput_for_five_completed_cards(run_command):
     assert exit_code == 0
     assert HEADER in output
     assert SEPARATOR in output
-    assert "| Current | 4 days | 6 days | 5 | 0 | 0 days |" in output
+    assert "| Current | 4 days | 6 days | 5 | 0 | 0 days | 0% |" in output
 
 
 def test_command_reports_throughput_zero_when_no_cards_completed(run_command):
@@ -93,7 +95,7 @@ def test_command_reports_throughput_zero_when_no_cards_completed(run_command):
     assert exit_code == 0
     assert HEADER in output
     assert SEPARATOR in output
-    assert "| Current | 0 days | 0 days | 0 | 0 | 0 days |" in output
+    assert "| Current | 0 days | 0 days | 0 | 0 | 0 days | 0% |" in output
 
 
 def test_malformed_dates_are_reported_without_a_traceback(run_command):
@@ -128,7 +130,7 @@ def test_completed_card_that_was_never_started_has_no_cycle_time():
 def test_cards_may_be_passed_as_dataclasses():
     card = Card(created=date(2024, 1, 1), started=date(2024, 1, 3), completed=date(2024, 1, 7))
 
-    assert "| Current | 4 days | 6 days | 1 | 0 | 0 days |" in format_performance_table([card])
+    assert "| Current | 4 days | 6 days | 1 | 0 | 0 days | 0% |" in format_performance_table([card])
 
 
 def test_throughput_counts_completed_cards():
@@ -157,7 +159,7 @@ def test_command_reports_a_wip_violation_when_the_limit_is_exceeded(run_command)
     assert exit_code == 0
     assert HEADER in output
     assert SEPARATOR in output
-    assert "| Current | 0 days | 0 days | 0 | 1 | 0 days |" in output
+    assert "| Current | 0 days | 0 days | 0 | 1 | 0 days | 0% |" in output
 
 
 def test_command_reports_no_wip_violations_when_no_limits_are_configured(run_command):
@@ -169,7 +171,7 @@ def test_command_reports_no_wip_violations_when_no_limits_are_configured(run_com
     assert exit_code == 0
     assert HEADER in output
     assert SEPARATOR in output
-    assert "| Current | 0 days | 0 days | 0 | 0 | 0 days |" in output
+    assert "| Current | 0 days | 0 days | 0 | 0 | 0 days | 0% |" in output
 
 
 def test_malformed_wip_limits_are_reported_without_a_traceback(run_command):
@@ -240,7 +242,7 @@ def test_command_reports_blocked_aging_for_a_blocked_card(run_command):
     assert exit_code == 0
     assert HEADER in output
     assert SEPARATOR in output
-    assert "| Current | 0 days | 0 days | 0 | 0 | 2 days |" in output
+    assert "| Current | 0 days | 0 days | 0 | 0 | 2 days | 0% |" in output
 
 
 def test_command_reports_zero_blocked_aging_when_no_cards_blocked(run_command):
@@ -251,4 +253,42 @@ def test_command_reports_zero_blocked_aging_when_no_cards_blocked(run_command):
     assert exit_code == 0
     assert HEADER in output
     assert SEPARATOR in output
-    assert "| Current | 4 days | 6 days | 1 | 0 | 0 days |" in output
+    assert "| Current | 4 days | 6 days | 1 | 0 | 0 days | 0% |" in output
+
+
+def test_command_reports_escalation_rate_with_escalations(run_command):
+    """AC1: with 2 escalations and 10 completed cards, the table shows
+    Escalation rate 20%."""
+    cards = [COMPLETED_CARD] * 10
+    exit_code, output, _ = run_command(cards, escalations=2)
+
+    assert exit_code == 0
+    assert HEADER in output
+    assert SEPARATOR in output
+    assert "| Current | 4 days | 6 days | 10 | 0 | 0 days | 20% |" in output
+
+
+def test_command_reports_zero_escalation_rate_when_no_completed_cards(run_command):
+    """AC2: with no completed cards and no escalations, the table shows
+    Escalation rate 0% and the command exits successfully."""
+    exit_code, output, _ = run_command([IN_FLIGHT_CARD])
+
+    assert exit_code == 0
+    assert HEADER in output
+    assert SEPARATOR in output
+    assert "| Current | 0 days | 0 days | 0 | 0 | 0 days | 0% |" in output
+
+
+def test_escalation_rate_is_zero_when_no_cards_completed():
+    """With no completed cards the escalation rate is 0 regardless of escalations."""
+    from sprint_metrics import calculate_escalation_rate
+
+    assert calculate_escalation_rate([IN_FLIGHT_CARD], escalations=5) == 0
+
+
+def test_escalation_rate_rounds_to_nearest_percent():
+    """1 escalation out of 3 completed cards is 33.33%, which rounds to 33%."""
+    from sprint_metrics import calculate_escalation_rate
+
+    cards = [COMPLETED_CARD] * 3
+    assert calculate_escalation_rate(cards, escalations=1) == 33

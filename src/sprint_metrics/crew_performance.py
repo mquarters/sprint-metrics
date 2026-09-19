@@ -167,17 +167,19 @@ def calculate_wip_violations(
 def format_performance_table(
     cards: Iterable[Card | Mapping[str, object]],
     wip_limits: Mapping[str, int] | None = None,
+    escalations: int = 0,
 ) -> str:
     """Render the crew performance metrics as a markdown table."""
     cycle_time, lead_time = calculate_cycle_time_and_lead_time(cards)
     throughput = calculate_throughput(cards)
     wip_violations = calculate_wip_violations(cards, wip_limits)
     blocked_aging = calculate_blocked_aging(cards)
+    escalation_rate = calculate_escalation_rate(cards, escalations)
     return "\n".join(
         [
-            "| Sprint | Cycle time | Lead time | Throughput | WIP violations | Blocked aging |",
-            "|--------|------------|-----------|------------|----------------|---------------|",
-            f"| Current | {cycle_time} days | {lead_time} days | {throughput} | {wip_violations} | {blocked_aging} days |",
+            "| Sprint | Cycle time | Lead time | Throughput | WIP violations | Blocked aging | Escalation rate |",
+            "|--------|------------|-----------|------------|----------------|---------------|-----------------|",
+            f"| Current | {cycle_time} days | {lead_time} days | {throughput} | {wip_violations} | {blocked_aging} days | {escalation_rate}% |",
         ]
     )
 
@@ -228,6 +230,13 @@ def main(argv: Sequence[str] | None = None) -> int:
         help='JSON file of WIP limits keyed by state, e.g. {"In Progress": 3}; '
         "without it no limits apply.",
     )
+    parser.add_argument(
+        "--escalations",
+        type=int,
+        default=0,
+        metavar="N",
+        help="Number of escalations in the current sprint.",
+    )
     args = parser.parse_args(argv)
 
     source = _read(args.cards)
@@ -240,7 +249,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"sprint-metrics: {exc}", file=sys.stderr)
         return 2
 
-    print(format_performance_table(cards, wip_limits))
+    print(format_performance_table(cards, wip_limits, args.escalations))
     return 0
 
 
@@ -263,3 +272,19 @@ def calculate_blocked_aging(cards: Iterable[Card | Mapping[str, object]]) -> int
             aging = (date.today() - card.blocked_since).days
         max_aging = max(max_aging, aging)
     return max_aging
+
+
+def calculate_escalation_rate(
+    cards: Iterable[Card | Mapping[str, object]],
+    escalations: int = 0,
+) -> int:
+    """Return the escalation rate as a percentage (0-100).
+
+    The rate is the number of escalations divided by the number of completed
+    cards, expressed as a whole-number percentage. When no cards are completed
+    the rate is 0.
+    """
+    completed = sum(1 for card in _as_cards(cards) if card.is_completed)
+    if completed == 0:
+        return 0
+    return round(escalations / completed * 100)
