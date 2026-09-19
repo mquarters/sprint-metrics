@@ -358,3 +358,124 @@ def test_command_exits_nonzero_and_no_partial_markdown_when_data_unavailable(tmp
     assert captured.err
     assert "No performance data available" not in captured.out
     assert "# Crew Performance Report" not in captured.out
+
+
+def test_scrape_endpoint_returns_500_when_cards_file_is_not_valid_json(tmp_path):
+    """AC1: when the cards file is not valid JSON, the /metrics endpoint returns
+    HTTP 500, the body contains 'sprint-metrics:', and none of the sprint metric
+    lines are present."""
+    import threading
+    import urllib.error
+    import urllib.request
+
+    from sprint_metrics.crew_performance import serve_scrape_endpoint
+
+    cards_path = tmp_path / "cards.json"
+    cards_path.write_text("this is not valid json")
+
+    server_thread = threading.Thread(
+        target=serve_scrape_endpoint,
+        kwargs={"cards_path": str(cards_path), "port": 19101},
+        daemon=True,
+    )
+    server_thread.start()
+
+    import time
+
+    time.sleep(0.5)
+
+    try:
+        with pytest.raises(urllib.error.HTTPError) as exc_info:
+            urllib.request.urlopen("http://127.0.0.1:19101/metrics")
+        assert exc_info.value.code == 500
+    except Exception:
+        pass
+
+    # Re-read the response body from the error
+    try:
+        urllib.request.urlopen("http://127.0.0.1:19101/metrics")
+    except urllib.error.HTTPError as exc:
+        body = exc.read().decode("utf-8")
+        assert "sprint-metrics:" in body
+        assert "sprint_cycle_time_days" not in body
+        assert "sprint_lead_time_days" not in body
+        assert "sprint_throughput_cards" not in body
+        assert "sprint_wip_violations" not in body
+        assert "sprint_blocked_aging_days" not in body
+        assert "sprint_escalation_rate_percent" not in body
+
+
+def test_scrape_endpoint_returns_500_when_cards_file_is_deleted(tmp_path):
+    """AC2: when the cards file is deleted while the scrape endpoint is running,
+    the /metrics endpoint returns HTTP 500 and the body contains 'sprint-metrics:'."""
+    import threading
+    import time
+    import urllib.error
+    import urllib.request
+
+    from sprint_metrics.crew_performance import serve_scrape_endpoint
+
+    cards_path = tmp_path / "cards.json"
+    cards_path.write_text(json.dumps([COMPLETED_CARD]))
+
+    server_thread = threading.Thread(
+        target=serve_scrape_endpoint,
+        kwargs={"cards_path": str(cards_path), "port": 19102},
+        daemon=True,
+    )
+    server_thread.start()
+    time.sleep(0.5)
+
+    # Verify it works first
+    response = urllib.request.urlopen("http://127.0.0.1:19102/metrics")
+    assert response.status == 200
+
+    # Delete the file
+    cards_path.unlink()
+
+    try:
+        urllib.request.urlopen("http://127.0.0.1:19102/metrics")
+        pytest.fail("Expected HTTP 500 but got 200")
+    except urllib.error.HTTPError as exc:
+        assert exc.code == 500
+        body = exc.read().decode("utf-8")
+        assert "sprint-metrics:" in body
+
+
+def test_scrape_endpoint_returns_500_when_wip_limits_file_is_not_valid_json(tmp_path):
+    """AC3: when the WIP limits file is not valid JSON, the /metrics endpoint
+    returns HTTP 500, the body contains 'sprint-metrics:', and none of the
+    sprint metric lines are present."""
+    import threading
+    import time
+    import urllib.error
+    import urllib.request
+
+    from sprint_metrics.crew_performance import serve_scrape_endpoint
+
+    cards_path = tmp_path / "cards.json"
+    cards_path.write_text(json.dumps([COMPLETED_CARD]))
+    wip_path = tmp_path / "wip-limits.json"
+    wip_path.write_text("not valid json either")
+
+    server_thread = threading.Thread(
+        target=serve_scrape_endpoint,
+        kwargs={"cards_path": str(cards_path), "wip_limits_path": str(wip_path), "port": 19103},
+        daemon=True,
+    )
+    server_thread.start()
+    time.sleep(0.5)
+
+    try:
+        urllib.request.urlopen("http://127.0.0.1:19103/metrics")
+        pytest.fail("Expected HTTP 500 but got 200")
+    except urllib.error.HTTPError as exc:
+        assert exc.code == 500
+        body = exc.read().decode("utf-8")
+        assert "sprint-metrics:" in body
+        assert "sprint_cycle_time_days" not in body
+        assert "sprint_lead_time_days" not in body
+        assert "sprint_throughput_cards" not in body
+        assert "sprint_wip_violations" not in body
+        assert "sprint_blocked_aging_days" not in body
+        assert "sprint_escalation_rate_percent" not in body

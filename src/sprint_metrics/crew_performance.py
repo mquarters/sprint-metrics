@@ -242,7 +242,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Output the report as markdown instead of the default table format.",
     )
+    parser.add_argument(
+        "--scrape",
+        action="store_true",
+        help="Run an HTTP server exposing metrics at /metrics for scraping.",
+    )
+    parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        metavar="HOST",
+        help="Host to bind the scrape endpoint to (default: 127.0.0.1).",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=9100,
+        metavar="PORT",
+        help="Port to bind the scrape endpoint to (default: 9100).",
+    )
     args = parser.parse_args(argv)
+
+    if args.scrape:
+        cards_path = args.cards.name if hasattr(args.cards, "name") else str(args.cards)
+        wip_path = args.wip_limits.name if args.wip_limits is not None else None
+        serve_scrape_endpoint(cards_path, wip_path, args.host, args.port)
+        return 0
 
     source = _read(args.cards)
     wip_source = _read(args.wip_limits) if args.wip_limits is not None else None
@@ -326,3 +350,77 @@ def format_markdown_report(
             f"- **Escalation rate**: {escalation_rate}%",
         ]
     )
+
+
+def serve_scrape_endpoint(
+    cards_path: str,
+    wip_limits_path: str | None = None,
+    host: str = "127.0.0.1",
+    port: int = 9100,
+) -> None:
+    """Run an HTTP server that exposes sprint metrics at /metrics for scraping.
+
+    The endpoint reads the cards and WIP limits files on every request so that
+    changes to the board are reflected without restarting the process. When the
+    data cannot be read or parsed, the response is a 500 with an error line and
+    no metric lines, so the dashboard never shows stale or partial metrics.
+    """
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+
+    class MetricsHandler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:  # noqa: N802
+            if self.path != "/metrics":
+                self.send_response(404)
+                self.end_headers()
+                return
+
+            try:
+                with open(cards_path, encoding="utf-8") as handle:
+                    cards_source = handle.read()
+                cards = _load_cards(cards_source)
+
+                wip_limits: dict[str, int] | None = None
+                if wip_limits_path is not None:
+                    with open(wip_limits_path, encoding="utf-8") as handle:
+                        wip_source = handle.read()
+                    wip_limits = _load_wip_limits(wip_source)
+            except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                body = f"sprint-metrics: {exc}\n"
+                self.send_response(500)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body.encode("utf-8"))
+                return
+
+            cycle_time, lead_time = calculate_cycle_time_and_lead_time(cards)
+            throughput = calculate_throughput(cards)
+            wip_violations = calculate_wip_violations(cards, wip_limits)
+            blocked_aging = calculate_blocked_aging(cards)
+            escalation_rate = calculate_escalation_rate(cards)
+
+            lines = [
+                f"sprint_cycle_time_days {cycle_time}",
+                f"sprint_lead_time_days {lead_time}",
+                f"sprint_throughput_cards {throughput}",
+                f"sprint_wip_violations {wip_violations}",
+                f"sprint_blocked_aging_days {blocked_aging}",
+                f"sprint_escalation_rate_percent {escalation_rate}",
+            ]
+            body = "\n".join(lines) + "\n"
+            self.send_response(200)
+            self.send_header("Content-Type", "text/plain; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body.encode("utf-8"))
+
+        def log_message(self, format: str, *args: object) -> None:  # noqa: A002
+            pass
+
+    server = HTTPServer((host, port), MetricsHandler)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
