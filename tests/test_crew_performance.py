@@ -325,3 +325,36 @@ def test_command_does_not_produce_markdown_output_by_default(run_command):
     assert "- **Cycle time**" not in output
     assert HEADER in output
     assert SEPARATOR in output
+
+
+def test_command_reports_no_performance_data_in_markdown_when_no_cards(run_command):
+    """AC1: when no crew performance data is available, the markdown report
+    includes 'No performance data available' and does not include summary
+    counts or crew member performance lines."""
+    exit_code, output, _ = run_command([], markdown=True)
+
+    assert exit_code == 0
+    assert "No performance data available" in output
+    assert "# Crew Performance Report" not in output
+    assert "## Current Sprint" not in output
+    assert "- **Cycle time**" not in output
+    assert "- **Lead time**" not in output
+    assert "- **Throughput**" not in output
+    assert "- **WIP violations**" not in output
+    assert "- **Blocked aging**" not in output
+    assert "- **Escalation rate**" not in output
+
+
+def test_command_exits_nonzero_and_no_partial_markdown_when_data_unavailable(tmp_path, capsys):
+    """AC2: when the performance command cannot access crew performance data,
+    it exits with a non-zero status, writes an error to stderr, and does not
+    output a partial markdown report."""
+    path = tmp_path / "cards.json"
+    path.write_text("not valid json")
+    exit_code = main([str(path), "--markdown"])
+    captured = capsys.readouterr()
+
+    assert exit_code != 0
+    assert captured.err
+    assert "No performance data available" not in captured.out
+    assert "# Crew Performance Report" not in captured.out
