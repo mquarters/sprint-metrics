@@ -518,3 +518,47 @@ def test_command_reports_json_for_an_empty_sprint(run_command):
     assert data["wip_violations"] == 0
     assert data["blocked_aging_days"] == 0
     assert data["escalation_rate_percent"] == 0
+
+
+def test_command_reports_json_error_for_invalid_cards_json(tmp_path, capsys):
+    """AC1: when the cards input contains invalid JSON and --json is used, the
+    command exits with a non-zero status, stderr is non-empty, and stdout is
+    empty."""
+    path = tmp_path / "cards.json"
+    path.write_text("not valid json")
+    exit_code = main([str(path), "--json"])
+    captured = capsys.readouterr()
+
+    assert exit_code != 0
+    assert captured.err
+    assert captured.out == ""
+
+
+def test_command_reports_json_error_for_wip_limits_as_array(tmp_path, capsys):
+    """AC2: when the WIP limits input is a JSON array instead of an object and
+    --json is used, the command exits with a non-zero status, stderr is
+    non-empty, and stdout is empty."""
+    cards_path = tmp_path / "cards.json"
+    cards_path.write_text("[]")
+    limits_path = tmp_path / "wip-limits.json"
+    limits_path.write_text('["In Progress", 3]')
+    exit_code = main([str(cards_path), "--wip-limits", str(limits_path), "--json"])
+    captured = capsys.readouterr()
+
+    assert exit_code != 0
+    assert captured.err
+    assert captured.out == ""
+
+
+def test_command_reports_json_error_for_invalid_card_date(tmp_path, capsys):
+    """AC3: when a card's created value is not an ISO-8601 date and --json is
+    used, the command exits with a non-zero status, stderr is non-empty, and
+    stdout is empty."""
+    path = tmp_path / "cards.json"
+    path.write_text('[{"created": "not-a-date"}]')
+    exit_code = main([str(path), "--json"])
+    captured = capsys.readouterr()
+
+    assert exit_code != 0
+    assert captured.err
+    assert captured.out == ""
