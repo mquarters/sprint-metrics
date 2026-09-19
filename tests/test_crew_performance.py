@@ -27,7 +27,7 @@ IN_FLIGHT_CARD = {"created": "2024-01-01", "started": "2024-01-02", "completed":
 def run_command(tmp_path, capsys):
     """Run the command over a sprint's cards, returning its exit code and output."""
 
-    def run(cards, wip_limits=None, escalations=0):
+    def run(cards, wip_limits=None, escalations=0, markdown=False):
         path = tmp_path / "cards.json"
         path.write_text(json.dumps(cards))
         argv = [str(path)]
@@ -37,6 +37,8 @@ def run_command(tmp_path, capsys):
             argv += ["--wip-limits", str(limits_path)]
         if escalations:
             argv += ["--escalations", str(escalations)]
+        if markdown:
+            argv += ["--markdown"]
         exit_code = main(argv)
         captured = capsys.readouterr()
         return exit_code, captured.out, captured.err
@@ -292,3 +294,34 @@ def test_escalation_rate_rounds_to_nearest_percent():
 
     cards = [COMPLETED_CARD] * 3
     assert calculate_escalation_rate(cards, escalations=1) == 33
+
+
+def test_command_reports_markdown_when_markdown_option_is_used(run_command):
+    """AC1: when the markdown output option is used, the command writes a markdown
+    report to standard output and does not write the table or JSON output."""
+    exit_code, output, _ = run_command([COMPLETED_CARD], markdown=True)
+
+    assert exit_code == 0
+    assert "# Crew Performance Report" in output
+    assert "## Current Sprint" in output
+    assert "- **Cycle time**: 4 days" in output
+    assert "- **Lead time**: 6 days" in output
+    assert "- **Throughput**: 1 cards" in output
+    assert "- **WIP violations**: 0" in output
+    assert "- **Blocked aging**: 0 days" in output
+    assert "- **Escalation rate**: 0%" in output
+    assert HEADER not in output
+    assert SEPARATOR not in output
+
+
+def test_command_does_not_produce_markdown_output_by_default(run_command):
+    """AC2: when the command is run without the markdown output option, it does not
+    produce markdown output."""
+    exit_code, output, _ = run_command([COMPLETED_CARD])
+
+    assert exit_code == 0
+    assert "# Crew Performance Report" not in output
+    assert "## Current Sprint" not in output
+    assert "- **Cycle time**" not in output
+    assert HEADER in output
+    assert SEPARATOR in output

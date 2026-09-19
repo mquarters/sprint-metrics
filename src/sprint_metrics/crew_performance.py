@@ -237,6 +237,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         metavar="N",
         help="Number of escalations in the current sprint.",
     )
+    parser.add_argument(
+        "--markdown",
+        action="store_true",
+        help="Output the report as markdown instead of the default table format.",
+    )
     args = parser.parse_args(argv)
 
     source = _read(args.cards)
@@ -249,7 +254,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"sprint-metrics: {exc}", file=sys.stderr)
         return 2
 
-    print(format_performance_table(cards, wip_limits, args.escalations))
+    if args.markdown:
+        print(format_markdown_report(cards, wip_limits, args.escalations))
+    else:
+        print(format_performance_table(cards, wip_limits, args.escalations))
     return 0
 
 
@@ -288,3 +296,30 @@ def calculate_escalation_rate(
     if completed == 0:
         return 0
     return round(escalations / completed * 100)
+
+
+def format_markdown_report(
+    cards: Iterable[Card | Mapping[str, object]],
+    wip_limits: Mapping[str, int] | None = None,
+    escalations: int = 0,
+) -> str:
+    """Render the crew performance metrics as a markdown report for the standup issue."""
+    cycle_time, lead_time = calculate_cycle_time_and_lead_time(cards)
+    throughput = calculate_throughput(cards)
+    wip_violations = calculate_wip_violations(cards, wip_limits)
+    blocked_aging = calculate_blocked_aging(cards)
+    escalation_rate = calculate_escalation_rate(cards, escalations)
+    return "\n".join(
+        [
+            "# Crew Performance Report",
+            "",
+            "## Current Sprint",
+            "",
+            f"- **Cycle time**: {cycle_time} days",
+            f"- **Lead time**: {lead_time} days",
+            f"- **Throughput**: {throughput} cards",
+            f"- **WIP violations**: {wip_violations}",
+            f"- **Blocked aging**: {blocked_aging} days",
+            f"- **Escalation rate**: {escalation_rate}%",
+        ]
+    )
