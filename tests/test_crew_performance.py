@@ -27,7 +27,7 @@ IN_FLIGHT_CARD = {"created": "2024-01-01", "started": "2024-01-02", "completed":
 def run_command(tmp_path, capsys):
     """Run the command over a sprint's cards, returning its exit code and output."""
 
-    def run(cards, wip_limits=None, escalations=0, markdown=False):
+    def run(cards, wip_limits=None, escalations=0, markdown=False, prometheus=False):
         path = tmp_path / "cards.json"
         path.write_text(json.dumps(cards))
         argv = [str(path)]
@@ -39,6 +39,8 @@ def run_command(tmp_path, capsys):
             argv += ["--escalations", str(escalations)]
         if markdown:
             argv += ["--markdown"]
+        if prometheus:
+            argv += ["--prometheus"]
         exit_code = main(argv)
         captured = capsys.readouterr()
         return exit_code, captured.out, captured.err
@@ -358,3 +360,88 @@ def test_command_exits_nonzero_and_no_partial_markdown_when_data_unavailable(tmp
     assert captured.err
     assert "No performance data available" not in captured.out
     assert "# Crew Performance Report" not in captured.out
+
+
+def test_command_reports_prometheus_metrics_for_a_completed_card(run_command):
+    """AC1: one card started 4 days and created 6 days before it completed shows
+    Prometheus metrics with cycle time 4, lead time 6, throughput 1, and all
+    other metrics at 0."""
+    exit_code, output, _ = run_command([COMPLETED_CARD], prometheus=True)
+
+    assert exit_code == 0
+    assert "sprint_cycle_time_days 4" in output
+    assert "sprint_lead_time_days 6" in output
+    assert "sprint_throughput_cards 1" in output
+    assert "sprint_wip_violations 0" in output
+    assert "sprint_blocked_aging_days 0" in output
+    assert "sprint_escalation_rate_percent 0" in output
+
+
+def test_command_reports_prometheus_wip_violations(run_command):
+    """AC2: with a WIP limit of 3 for In Progress and 4 cards in In Progress at the
+    same time, the Prometheus output shows sprint_wip_violations 1."""
+    cards = [IN_FLIGHT_CARD] * 4
+    exit_code, output, _ = run_command(cards, wip_limits={"In Progress": 3}, prometheus=True)
+
+    assert exit_code == 0
+    assert "sprint_wip_violations 1" in output
+
+
+def test_command_reports_prometheus_blocked_aging(run_command):
+    """AC3: one card blocked for 2 days shows sprint_blocked_aging_days 2 in the
+    Prometheus output."""
+    from datetime import date, timedelta
+
+    today = date.today()
+    blocked_card = {
+        "created": "2024-01-01",
+        "started": "2024-01-02",
+        "completed": "",
+        "blocked_since": (today - timedelta(days=2)).isoformat(),
+    }
+    exit_code, output, _ = run_command([blocked_card], prometheus=True)
+
+    assert exit_code == 0
+    assert "sprint_blocked_aging_days 2" in output
+
+
+def test_command_reports_prometheus_escalation_rate(run_command):
+    """AC4: with 2 escalations and 10 completed cards, the Prometheus output shows
+    sprint_escalation_rate_percent 20."""
+    cards = [COMPLETED_CARD] * 10
+    exit_code, output, _ = run_command(cards, escalations=2, prometheus=True)
+
+    assert exit_code == 0
+    assert "sprint_escalation_rate_percent 20" in output
+
+
+def test_command_reports_prometheus_zero_for_an_empty_sprint(run_command):
+    """AC5: a sprint with no cards, no WIP limits, and no escalations shows all
+    Prometheus metrics at 0."""
+    exit_code, output, _ = run_command([], prometheus=True)
+
+    assert exit_code == 0
+    assert "sprint_cycle_time_days 0" in output
+    assert "sprint_lead_time_days 0" in output
+    assert "sprint_throughput_cards 0" in output
+    assert "sprint_wip_violations 0" in output
+    assert "sprint_blocked_aging_days 0" in output
+    assert "sprint_escalation_rate_percent 0" in output
+
+
+def test_command_reports_prometheus_error_for_invalid_json(tmp_path, capsys):
+    """AC6: when the cards file is not valid JSON, the command exits with code 2,
+    writes an error to stderr, and does not output any Prometheus metrics."""
+    path = tmp_path / "cards.json"
+    path.write_text("not valid json")
+    exit_code = main([str(path), "--prometheus"])
+    captured = capsys.readouterr()
+
+    assert exit_code == 2
+    assert "sprint-metrics:" in captured.err
+    assert "sprint_cycle_time_days" not in captured.out
+    assert "sprint_lead_time_days" not in captured.out
+    assert "sprint_throughput_cards" not in captured.out
+    assert "sprint_wip_violations" not in captured.out
+    assert "sprint_blocked_aging_days" not in captured.out
+    assert "sprint_escalation_rate_percent" not in captured.out
