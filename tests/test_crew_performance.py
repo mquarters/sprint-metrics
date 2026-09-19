@@ -27,7 +27,9 @@ IN_FLIGHT_CARD = {"created": "2024-01-01", "started": "2024-01-02", "completed":
 def run_command(tmp_path, capsys):
     """Run the command over a sprint's cards, returning its exit code and output."""
 
-    def run(cards, wip_limits=None, escalations=0, markdown=False, prometheus=False):
+    def run(
+        cards, wip_limits=None, escalations=0, markdown=False, prometheus=False, json_output=False
+    ):
         path = tmp_path / "cards.json"
         path.write_text(json.dumps(cards))
         argv = [str(path)]
@@ -41,6 +43,8 @@ def run_command(tmp_path, capsys):
             argv += ["--markdown"]
         if prometheus:
             argv += ["--prometheus"]
+        if json_output:
+            argv += ["--json"]
         exit_code = main(argv)
         captured = capsys.readouterr()
         return exit_code, captured.out, captured.err
@@ -445,3 +449,72 @@ def test_command_reports_prometheus_error_for_invalid_json(tmp_path, capsys):
     assert "sprint_wip_violations" not in captured.out
     assert "sprint_blocked_aging_days" not in captured.out
     assert "sprint_escalation_rate_percent" not in captured.out
+
+
+def test_command_reports_json_for_a_completed_card(run_command):
+    """AC1: one completed card with cycle time 4, lead time 6, throughput 1, and
+    all other metrics at 0 produces a JSON object with those values."""
+    exit_code, output, _ = run_command([COMPLETED_CARD], json_output=True)
+
+    assert exit_code == 0
+    data = json.loads(output)
+    assert data["cycle_time_days"] == 4
+    assert data["lead_time_days"] == 6
+    assert data["throughput"] == 1
+    assert data["wip_violations"] == 0
+    assert data["blocked_aging_days"] == 0
+    assert data["escalation_rate_percent"] == 0
+    assert HEADER not in output
+    assert "# Crew Performance Report" not in output
+
+
+def test_command_reports_json_wip_violations(run_command):
+    """AC2: four cards in progress with a WIP limit of 3 produces wip_violations 1
+    in the JSON output."""
+    cards = [IN_FLIGHT_CARD] * 4
+    exit_code, output, _ = run_command(cards, wip_limits={"In Progress": 3}, json_output=True)
+
+    assert exit_code == 0
+    data = json.loads(output)
+    assert data["wip_violations"] == 1
+
+
+def test_command_reports_json_escalation_rate(run_command):
+    """AC3: ten completed cards with two escalations produces
+    escalation_rate_percent 20 in the JSON output."""
+    cards = [COMPLETED_CARD] * 10
+    exit_code, output, _ = run_command(cards, escalations=2, json_output=True)
+
+    assert exit_code == 0
+    data = json.loads(output)
+    assert data["escalation_rate_percent"] == 20
+
+
+def test_command_reports_json_blocked_aging(run_command):
+    """AC4: one card blocked for 2 days produces blocked_aging_days 2 in the
+    JSON output."""
+    blocked_card = {
+        "created": "2024-01-01",
+        "started": "2024-01-02",
+        "blocked_since": "2024-01-03",
+        "completed": "2024-01-05",
+    }
+    exit_code, output, _ = run_command([blocked_card], json_output=True)
+
+    assert exit_code == 0
+    data = json.loads(output)
+    assert data["blocked_aging_days"] == 2
+
+
+def test_command_reports_json_for_an_empty_sprint(run_command):
+    """AC5: an empty cards list produces a JSON object with all metrics at 0."""
+    exit_code, output, _ = run_command([], json_output=True)
+
+    assert exit_code == 0
+    data = json.loads(output)
+    assert data["cycle_time_days"] == 0
+    assert data["lead_time_days"] == 0
+    assert data["throughput"] == 0
+    assert data["wip_violations"] == 0
+    assert data["blocked_aging_days"] == 0
+    assert data["escalation_rate_percent"] == 0
