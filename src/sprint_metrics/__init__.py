@@ -8,6 +8,7 @@ from sprint_metrics.crew_performance import (
     calculate_throughput,
     calculate_wip_violations,
     format_performance_table,
+    format_prometheus_report,
     main,
 )
 from sprint_metrics.scrape import serve_metrics
@@ -20,6 +21,7 @@ __all__ = [
     "calculate_throughput",
     "calculate_wip_violations",
     "format_performance_table",
+    "format_prometheus_report",
     "main",
     "serve_metrics",
 ]

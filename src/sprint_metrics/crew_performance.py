@@ -253,6 +253,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=8080,
         metavar="PORT",
         help="Port for the scrape endpoint (default: 8080).",
+        "--prometheus",
+        action="store_true",
+        help="Output the report in Prometheus text exposition format.",
     )
     args = parser.parse_args(argv)
 
@@ -279,7 +282,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"sprint-metrics: {exc}", file=sys.stderr)
         return 2
 
-    if args.markdown:
+    if args.prometheus:
+        print(format_prometheus_report(cards, wip_limits, args.escalations))
+    elif args.markdown:
         print(format_markdown_report(cards, wip_limits, args.escalations))
     else:
         print(format_performance_table(cards, wip_limits, args.escalations))
@@ -349,5 +354,29 @@ def format_markdown_report(
             f"- **WIP violations**: {wip_violations}",
             f"- **Blocked aging**: {blocked_aging} days",
             f"- **Escalation rate**: {escalation_rate}%",
+        ]
+    )
+
+
+def format_prometheus_report(
+    cards: Iterable[Card | Mapping[str, object]],
+    wip_limits: Mapping[str, int] | None = None,
+    escalations: int = 0,
+) -> str:
+    """Render the crew performance metrics in Prometheus text exposition format."""
+    parsed = _as_cards(cards)
+    cycle_time, lead_time = calculate_cycle_time_and_lead_time(parsed)
+    throughput = calculate_throughput(parsed)
+    wip_violations = calculate_wip_violations(parsed, wip_limits)
+    blocked_aging = calculate_blocked_aging(parsed)
+    escalation_rate = calculate_escalation_rate(parsed, escalations)
+    return "\n".join(
+        [
+            f"sprint_cycle_time_days {cycle_time}",
+            f"sprint_lead_time_days {lead_time}",
+            f"sprint_throughput_cards {throughput}",
+            f"sprint_wip_violations {wip_violations}",
+            f"sprint_blocked_aging_days {blocked_aging}",
+            f"sprint_escalation_rate_percent {escalation_rate}",
         ]
     )
