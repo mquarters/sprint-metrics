@@ -28,7 +28,14 @@ target-version = "py312"
 # version of ruff happens to default to — which changed under us: 0.16
 # enables flake8-datetimez, so `date.today()` began failing lint and two
 # stories were blocked by a rule nobody had chosen.
-select = ["E", "F", "I", "UP", "B", "SIM"]
+#
+# E501 is deliberately absent: `line-length` above still applies, but it is
+# the formatter's to enforce. `ruff format` wraps everything it can, so a
+# surviving E501 is by definition something it could not split — a long
+# string literal or a URL. That is not a finding anyone can act on, and the
+# Developer agent has no technique for it: one card spent half its repair
+# attempts failing to shorten a single markdown table row.
+select = ["E4", "E7", "E9", "F", "I", "UP", "B", "SIM"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
