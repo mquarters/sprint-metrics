@@ -23,6 +23,13 @@ packages = ["src/sprint_metrics"]
 line-length = 100
 target-version = "py312"
 
+[tool.ruff.lint]
+# Pinned explicitly. Left unset, the effective rule set is whatever this
+# version of ruff happens to default to — which changed under us: 0.16
+# enables flake8-datetimez, so `date.today()` began failing lint and two
+# stories were blocked by a rule nobody had chosen.
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
