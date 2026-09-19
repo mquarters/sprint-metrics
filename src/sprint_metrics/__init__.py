@@ -4,6 +4,7 @@ from sprint_metrics.crew_performance import (
     Card,
     calculate_cycle_time_and_lead_time,
     calculate_throughput,
+    calculate_wip_violations,
     format_performance_table,
     main,
 )
@@ -12,6 +13,7 @@ __all__ = [
     "Card",
     "calculate_cycle_time_and_lead_time",
     "calculate_throughput",
+    "calculate_wip_violations",
     "format_performance_table",
     "main",
 ]
