@@ -242,7 +242,32 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Output the report as markdown instead of the default table format.",
     )
+    parser.add_argument(
+        "--scrape",
+        action="store_true",
+        help="Serve metrics at a /metrics endpoint for Prometheus to scrape.",
+    )
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=8080,
+        metavar="PORT",
+        help="Port for the scrape endpoint (default: 8080).",
+    )
     args = parser.parse_args(argv)
+
+    if args.scrape:
+        from sprint_metrics.scrape import serve_metrics
+
+        cards_path = args.cards.name if hasattr(args.cards, "name") else "<stdin>"
+        wip_path = args.wip_limits.name if args.wip_limits is not None else None
+        serve_metrics(
+            cards_path=cards_path,
+            port=args.port,
+            wip_limits_path=wip_path,
+            escalations=args.escalations,
+        )
+        return 0
 
     source = _read(args.cards)
     wip_source = _read(args.wip_limits) if args.wip_limits is not None else None

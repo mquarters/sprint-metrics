@@ -10,6 +10,7 @@ from sprint_metrics.crew_performance import (
     format_performance_table,
     main,
 )
+from sprint_metrics.scrape import serve_metrics
 
 __all__ = [
     "Card",
@@ -20,4 +21,5 @@ __all__ = [
     "calculate_wip_violations",
     "format_performance_table",
     "main",
+    "serve_metrics",
 ]
