@@ -304,11 +304,14 @@ def format_markdown_report(
     escalations: int = 0,
 ) -> str:
     """Render the crew performance metrics as a markdown report for the standup issue."""
-    cycle_time, lead_time = calculate_cycle_time_and_lead_time(cards)
-    throughput = calculate_throughput(cards)
-    wip_violations = calculate_wip_violations(cards, wip_limits)
-    blocked_aging = calculate_blocked_aging(cards)
-    escalation_rate = calculate_escalation_rate(cards, escalations)
+    parsed = _as_cards(cards)
+    if not parsed:
+        return "No performance data available"
+    cycle_time, lead_time = calculate_cycle_time_and_lead_time(parsed)
+    throughput = calculate_throughput(parsed)
+    wip_violations = calculate_wip_violations(parsed, wip_limits)
+    blocked_aging = calculate_blocked_aging(parsed)
+    escalation_rate = calculate_escalation_rate(parsed, escalations)
     return "\n".join(
         [
             "# Crew Performance Report",
