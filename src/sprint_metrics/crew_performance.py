@@ -1,4 +1,5 @@
-"""Crew performance command: report cycle time, lead time, and throughput for the current sprint."""
+"""Crew performance command: report cycle time, lead time, throughput, and
+WIP-limit violations for the current sprint."""
 
 from __future__ import annotations
 
@@ -102,15 +103,78 @@ def calculate_throughput(cards: Iterable[Card | Mapping[str, object]]) -> int:
     return sum(1 for card in _as_cards(cards) if card.is_completed)
 
 
-def format_performance_table(cards: Iterable[Card | Mapping[str, object]]) -> str:
+def _state_windows(card: Card) -> dict[str, tuple[date, date | None]]:
+    """When the card sat in each board state, as a half-open ``[entered, left)`` window.
+
+    A ``None`` end means the card is in that state still. A card completed
+    without ever being started went from To Do straight to Completed, so it
+    never occupied In Progress.
+    """
+    windows: dict[str, tuple[date, date | None]] = {
+        "To Do": (card.created, card.started or card.completed)
+    }
+    if card.started is not None:
+        windows["In Progress"] = (card.started, card.completed)
+    if card.completed is not None:
+        windows["Completed"] = (card.completed, None)
+    return windows
+
+
+def _peak_occupancy(cards: Sequence[Card], state: str) -> int:
+    """The most cards that sat in ``state`` at the same time during the sprint."""
+    events: list[tuple[date, int]] = []
+    for card in cards:
+        window = _state_windows(card).get(state)
+        if window is None:
+            continue
+        entered, left = window
+        events.append((entered, 1))
+        if left is not None:
+            events.append((left, -1))
+
+    peak = occupancy = 0
+    # Departures sort ahead of arrivals on the same day: a card that leaves as
+    # another arrives was never there at the same time.
+    for _, change in sorted(events):
+        occupancy += change
+        peak = max(peak, occupancy)
+    return peak
+
+
+def calculate_wip_violations(
+    cards: Iterable[Card | Mapping[str, object]],
+    wip_limits: Mapping[str, int] | None = None,
+) -> int:
+    """Return the number of states whose WIP limit was breached this sprint.
+
+    A state is in violation when more cards sat in it at the same time than its
+    limit allows, at any point in the sprint — work that was started and
+    finished before the report ran still crowded the board. States with no
+    configured limit, and a sprint with no limits at all, cannot be violated.
+    """
+    if not wip_limits:
+        return 0
+
+    parsed = _as_cards(cards)
+    breached = [
+        state for state, limit in wip_limits.items() if _peak_occupancy(parsed, state) > limit
+    ]
+    return len(breached)
+
+
+def format_performance_table(
+    cards: Iterable[Card | Mapping[str, object]],
+    wip_limits: Mapping[str, int] | None = None,
+) -> str:
     """Render the crew performance metrics as a markdown table."""
     cycle_time, lead_time = calculate_cycle_time_and_lead_time(cards)
     throughput = calculate_throughput(cards)
+    wip_violations = calculate_wip_violations(cards, wip_limits)
     return "\n".join(
         [
-            "| Sprint | Cycle time | Lead time | Throughput |",
-            "|--------|------------|-----------|------------|",
-            f"| Current | {cycle_time} days | {lead_time} days | {throughput} |",
+            "| Sprint | Cycle time | Lead time | Throughput | WIP violations |",
+            "|--------|------------|-----------|------------|----------------|",
+            f"| Current | {cycle_time} days | {lead_time} days | {throughput} | {wip_violations} |",
         ]
     )
 
@@ -123,11 +187,28 @@ def _load_cards(source: str) -> list[Card]:
     return _as_cards(raw)
 
 
+def _load_wip_limits(source: str) -> dict[str, int]:
+    """Parse the JSON object of state names to WIP limits the command was given."""
+    raw = json.loads(source) if source.strip() else {}
+    if not isinstance(raw, Mapping):
+        raise TypeError("expected a JSON object of WIP limits, keyed by state")
+    return {str(state): int(limit) for state, limit in raw.items()}
+
+
+def _read(handle) -> str:
+    """Read a command-line file argument, closing it afterwards."""
+    with handle:
+        return handle.read()
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Entry point for the crew performance command."""
     parser = argparse.ArgumentParser(
         prog="sprint-metrics",
-        description="Report cycle time, lead time, and throughput for the current sprint.",
+        description=(
+            "Report cycle time, lead time, throughput, and WIP-limit violations "
+            "for the current sprint."
+        ),
     )
     parser.add_argument(
         "cards",
@@ -136,16 +217,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         default=sys.stdin,
         help="JSON file of sprint cards; reads stdin when omitted.",
     )
+    parser.add_argument(
+        "--wip-limits",
+        type=argparse.FileType("r"),
+        default=None,
+        metavar="FILE",
+        help='JSON file of WIP limits keyed by state, e.g. {"In Progress": 3}; '
+        "without it no limits apply.",
+    )
     args = parser.parse_args(argv)
 
-    with args.cards as handle:
-        source = handle.read()
+    source = _read(args.cards)
+    wip_source = _read(args.wip_limits) if args.wip_limits is not None else None
 
     try:
         cards = _load_cards(source)
+        wip_limits = _load_wip_limits(wip_source) if wip_source is not None else None
     except (TypeError, ValueError) as exc:
         print(f"sprint-metrics: {exc}", file=sys.stderr)
         return 2
 
-    print(format_performance_table(cards))
+    print(format_performance_table(cards, wip_limits))
     return 0
