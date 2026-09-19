@@ -14,7 +14,8 @@ from sprint_metrics import (
     main,
 )
 
-HEADER = "| Sprint | Cycle time | Lead time | Throughput | WIP violations |"
+HEADER = "| Sprint | Cycle time | Lead time | Throughput | WIP violations | Blocked aging |"
+SEPARATOR = "|--------|------------|-----------|------------|----------------|---------------|"
 SEPARATOR = "|--------|------------|-----------|------------|----------------|"
 
 # A card completed on the 7th, started 4 days earlier and created 6 days earlier.
@@ -49,7 +50,7 @@ def test_command_reports_cycle_and_lead_time_for_a_completed_card(run_command):
     assert exit_code == 0
     assert HEADER in output
     assert SEPARATOR in output
-    assert "| Current | 4 days | 6 days | 1 | 0 |" in output
+    assert "| Current | 4 days | 6 days | 1 | 0 | 0 days |" in output
 
 
 def test_command_reports_zero_when_nothing_is_completed(run_command):
@@ -60,7 +61,7 @@ def test_command_reports_zero_when_nothing_is_completed(run_command):
     assert exit_code == 0
     assert HEADER in output
     assert SEPARATOR in output
-    assert "| Current | 0 days | 0 days | 0 | 0 |" in output
+    assert "| Current | 0 days | 0 days | 0 | 0 | 0 days |" in output
 
 
 def test_command_reports_zero_for_an_empty_sprint(run_command):
@@ -68,7 +69,7 @@ def test_command_reports_zero_for_an_empty_sprint(run_command):
     exit_code, output, _ = run_command([])
 
     assert exit_code == 0
-    assert "| Current | 0 days | 0 days | 0 | 0 |" in output
+    assert "| Current | 0 days | 0 days | 0 | 0 | 0 days |" in output
 
 
 def test_command_reports_throughput_for_five_completed_cards(run_command):
@@ -80,7 +81,7 @@ def test_command_reports_throughput_for_five_completed_cards(run_command):
     assert exit_code == 0
     assert HEADER in output
     assert SEPARATOR in output
-    assert "| Current | 4 days | 6 days | 5 | 0 |" in output
+    assert "| Current | 4 days | 6 days | 5 | 0 | 0 days |" in output
 
 
 def test_command_reports_throughput_zero_when_no_cards_completed(run_command):
@@ -92,7 +93,7 @@ def test_command_reports_throughput_zero_when_no_cards_completed(run_command):
     assert exit_code == 0
     assert HEADER in output
     assert SEPARATOR in output
-    assert "| Current | 0 days | 0 days | 0 | 0 |" in output
+    assert "| Current | 0 days | 0 days | 0 | 0 | 0 days |" in output
 
 
 def test_malformed_dates_are_reported_without_a_traceback(run_command):
@@ -127,7 +128,7 @@ def test_completed_card_that_was_never_started_has_no_cycle_time():
 def test_cards_may_be_passed_as_dataclasses():
     card = Card(created=date(2024, 1, 1), started=date(2024, 1, 3), completed=date(2024, 1, 7))
 
-    assert "| Current | 4 days | 6 days | 1 | 0 |" in format_performance_table([card])
+    assert "| Current | 4 days | 6 days | 1 | 0 | 0 days |" in format_performance_table([card])
 
 
 def test_throughput_counts_completed_cards():
@@ -156,7 +157,7 @@ def test_command_reports_a_wip_violation_when_the_limit_is_exceeded(run_command)
     assert exit_code == 0
     assert HEADER in output
     assert SEPARATOR in output
-    assert "| Current | 0 days | 0 days | 0 | 1 |" in output
+    assert "| Current | 0 days | 0 days | 0 | 1 | 0 days |" in output
 
 
 def test_command_reports_no_wip_violations_when_no_limits_are_configured(run_command):
@@ -168,7 +169,7 @@ def test_command_reports_no_wip_violations_when_no_limits_are_configured(run_com
     assert exit_code == 0
     assert HEADER in output
     assert SEPARATOR in output
-    assert "| Current | 0 days | 0 days | 0 | 0 |" in output
+    assert "| Current | 0 days | 0 days | 0 | 0 | 0 days |" in output
 
 
 def test_malformed_wip_limits_are_reported_without_a_traceback(run_command):
@@ -220,3 +221,34 @@ def test_wip_violations_are_zero_without_limits():
 
     assert calculate_wip_violations(cards) == 0
     assert calculate_wip_violations(cards, {}) == 0
+
+
+def test_command_reports_blocked_aging_for_a_blocked_card(run_command):
+    """AC1: one card blocked for 2 days shows a current sprint row with Blocked
+    aging 2 days."""
+    from datetime import date, timedelta
+
+    today = date.today()
+    blocked_card = {
+        "created": "2024-01-01",
+        "started": "2024-01-02",
+        "completed": "",
+        "blocked_since": (today - timedelta(days=2)).isoformat(),
+    }
+    exit_code, output, _ = run_command([blocked_card])
+
+    assert exit_code == 0
+    assert HEADER in output
+    assert SEPARATOR in output
+    assert "| Current | 0 days | 0 days | 0 | 0 | 2 days |" in output
+
+
+def test_command_reports_zero_blocked_aging_when_no_cards_blocked(run_command):
+    """AC2: no cards are blocked in the current sprint, so the table shows
+    Blocked aging 0 days and the command exits successfully."""
+    exit_code, output, _ = run_command([COMPLETED_CARD, IN_FLIGHT_CARD])
+
+    assert exit_code == 0
+    assert HEADER in output
+    assert SEPARATOR in output
+    assert "| Current | 4 days | 6 days | 1 | 0 | 0 days |" in output

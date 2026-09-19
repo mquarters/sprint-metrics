@@ -22,6 +22,7 @@ class Card:
     created: date
     started: date | None = None
     completed: date | None = None
+    blocked_since: date | None = None
 
     @property
     def is_completed(self) -> bool:
@@ -64,6 +65,7 @@ def parse_card(raw: Mapping[str, object]) -> Card:
         created=created,
         started=_parse_date(raw.get("started"), "started"),
         completed=_parse_date(raw.get("completed"), "completed"),
+        blocked_since=_parse_date(raw.get("blocked_since"), "blocked_since"),
     )
 
 
@@ -170,11 +172,12 @@ def format_performance_table(
     cycle_time, lead_time = calculate_cycle_time_and_lead_time(cards)
     throughput = calculate_throughput(cards)
     wip_violations = calculate_wip_violations(cards, wip_limits)
+    blocked_aging = calculate_blocked_aging(cards)
     return "\n".join(
         [
-            "| Sprint | Cycle time | Lead time | Throughput | WIP violations |",
-            "|--------|------------|-----------|------------|----------------|",
-            f"| Current | {cycle_time} days | {lead_time} days | {throughput} | {wip_violations} |",
+            "| Sprint | Cycle time | Lead time | Throughput | WIP violations | Blocked aging |",
+            "|--------|------------|-----------|------------|----------------|---------------|",
+            f"| Current | {cycle_time} days | {lead_time} days | {throughput} | {wip_violations} | {blocked_aging} days |",
         ]
     )
 
@@ -239,3 +242,24 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     print(format_performance_table(cards, wip_limits))
     return 0
+
+
+def calculate_blocked_aging(cards: Iterable[Card | Mapping[str, object]]) -> int:
+    """Return the maximum number of days any card has been blocked in the sprint.
+
+    A card is considered blocked if it has a ``blocked_since`` date and has not
+    yet been completed. The aging is measured from ``blocked_since`` to the
+    card's completion date (if completed) or to today (if still blocked).
+    Cards that are not blocked or have no ``blocked_since`` date are ignored.
+    """
+    parsed = _as_cards(cards)
+    max_aging = 0
+    for card in parsed:
+        if card.blocked_since is None:
+            continue
+        if card.completed is not None:
+            aging = (card.completed - card.blocked_since).days
+        else:
+            aging = (date.today() - card.blocked_since).days
+        max_aging = max(max_aging, aging)
+    return max_aging
